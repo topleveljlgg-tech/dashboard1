@@ -1,0 +1,130 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+
+st.set_page_config(
+    page_title="Dashboard Ejecutivo de Incidentes",
+    layout="wide"
+)
+
+st.title("🚦 Dashboard Ejecutivo de Incidentes Operativos")
+
+# ======================
+# FUNCION SEMAFORO
+# ======================
+def semaforo(valor, verde, amarillo):
+    if valor <= verde:
+        return "🟢", "#2ECC71"
+    elif valor <= amarillo:
+        return "🟡", "#F1C40F"
+    else:
+        return "🔴", "#E74C3C"
+
+# ======================
+# CARGA DE ARCHIVO
+# ======================
+archivo = st.file_uploader("📂 Carga el archivo Excel", type=["xlsx"])
+
+if archivo:
+    df_raw = pd.read_excel(archivo)
+    df_raw.columns = df_raw.iloc[0]
+    df = df_raw.iloc[1:].copy()
+
+    df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
+    df["KILOMETROS"] = pd.to_numeric(df["KILOMETROS"], errors="coerce")
+
+    # ======================
+    # FILTROS
+    # ======================
+    st.sidebar.header("🎛 Filtros Ejecutivos")
+
+    rango_fecha = st.sidebar.date_input(
+        "Rango de Fechas",
+        [df["FECHA"].min(), df["FECHA"].max()]
+    )
+
+    categorias = st.sidebar.multiselect(
+        "Categoría",
+        options=df["CATEGORIA"].dropna().unique(),
+        default=df["CATEGORIA"].dropna().unique()
+    )
+
+    df_f = df[
+        (df["FECHA"].between(pd.to_datetime(rango_fecha[0]), pd.to_datetime(rango_fecha[1])))
+        & (df["CATEGORIA"].isin(categorias))
+    ]
+
+    # ======================
+    # KPIs
+    # ======================
+    total_incidentes = len(df_f)
+    km_prom = df_f["KILOMETROS"].mean()
+    top_estacion = df_f["ESTACION"].value_counts().max()
+    pct_fallas = (
+        df_f["CATEGORIA"]
+        .value_counts(normalize=True)
+        .get("FALLA DEL SISTEMA", 0) * 100
+    )
+
+    sem_inc, col_inc = semaforo(total_incidentes, 200, 260)
+    sem_km, col_km = semaforo(km_prom, 150, 250)
+    sem_est, col_est = semaforo(top_estacion, 5, 10)
+    sem_fal, col_fal = semaforo(pct_fallas, 30, 50)
+
+    st.subheader("📌 Semáforos Ejecutivos")
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.markdown(
+        f"<div style='background:{col_inc};padding:15px;border-radius:10px;color:white;'>"
+        f"{sem_inc} <b>Total Incidentes</b><br><h2>{total_incidentes}</h2></div>",
+        unsafe_allow_html=True
+    )
+
+    c2.markdown(
+        f"<div style='background:{col_km};padding:15px;border-radius:10px;color:white;'>"
+        f"{sem_km} <b>Km Promedio Afectado</b><br><h2>{km_prom:.1f}</h2></div>",
+        unsafe_allow_html=True
+    )
+
+    c3.markdown(
+        f"<div style='background:{col_est};padding:15px;border-radius:10px;color:white;'>"
+        f"{sem_est} <b>Máx Incidentes por Estación</b><br><h2>{top_estacion}</h2></div>",
+        unsafe_allow_html=True
+    )
+
+    c4.markdown(
+        f"<div style='background:{col_fal};padding:15px;border-radius:10px;color:white;'>"
+        f"{sem_fal} <b>% Fallas del Sistema</b><br><h2>{pct_fallas:.1f}%</h2></div>",
+        unsafe_allow_html=True
+    )
+
+    st.divider()
+
+    # ======================
+    # GRÁFICOS
+    # ======================
+    colA, colB = st.columns(2)
+
+    with colA:
+        fig_fecha = px.line(
+            df_f.groupby("FECHA").size().reset_index(name="Incidentes"),
+            x="FECHA", y="Incidentes",
+            title="Incidentes por Fecha"
+        )
+        st.plotly_chart(fig_fecha, use_container_width=True)
+
+    with colB:
+        fig_cat = px.bar(
+            df_f["CATEGORIA"].value_counts().reset_index(),
+            x="count", y="CATEGORIA",
+            orientation="h",
+            title="Incidentes por Categoría"
+        )
+        st.plotly_chart(fig_cat, use_container_width=True)
+
+    st.subheader("📋 Detalle Operativo")
+    st.dataframe(df_f, use_container_width=True)
+
+else:
+    st.info("⬆️ Carga un archivo Excel para activar el dashboard")
